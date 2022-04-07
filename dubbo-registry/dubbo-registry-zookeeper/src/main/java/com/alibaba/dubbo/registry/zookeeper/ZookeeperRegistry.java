@@ -139,8 +139,8 @@ public class ZookeeperRegistry extends FailbackRegistry {
     /**
      * 订阅
      *
-     * 客户端第一次连上注册中心，订阅时会获取全量的数据，后续则通过监听器事件进行更新。 服务治理中心会处理所有service层的订阅，service被设置成特殊值*。此外，服务治理中心除
-     * 了订阅当前节点，还会订阅这个节点下的所有子节点。
+     * 客户端第一次连上注册中心，订阅时会获取全量的数据，后续则通过监听器事件进行更新。 服务治理中心会处理所有service层的订阅，service被设置成特殊值。
+     * 此外，服务治理中心除了订阅当前节点，还会订阅这个节点下的所有子节点。
      *
      * @param url
      * @param listener
@@ -177,6 +177,7 @@ public class ZookeeperRegistry extends FailbackRegistry {
                 }
                 // 创建持久节点，接下来订阅持久节点的直接子节点
                 zkClient.create(root, false);
+
                 List<String> services = zkClient.addChildListener(root, zkListener);
                 // 然后遍历所有子节点进行订阅
                 if (services != null && !services.isEmpty()) {
@@ -190,7 +191,9 @@ public class ZookeeperRegistry extends FailbackRegistry {
                 }
             } else {
                 // 此处会根据URL中的category属性值获取具体的类别：providers、routers、consumers> configurators,然后拉取直接子节点的数据进行通知(notify)。
-                // 如果是providers类别的数据，则订阅方会更新本地Directory管理的Invoker服务列表；如果是routers分类，则订阅方会更新本地路由规则列表；如果是configuators类别，则订阅方会更新或覆盖本地动态参数列表。
+                // 如果是providers类别的数据，则订阅方会更新本地Directory管理的Invoker服务列表；
+                // 如果是routers分类，则订阅方会更新本地路由规则列表；
+                // 如果是configuators类别，则订阅方会更新或覆盖本地动态参数列表。
                 List<URL> urls = new ArrayList<URL>();
                 // 根据 URL 的类别，获取一组要订阅的路径
                 for (String path : toCategoriesPath(url)) {
