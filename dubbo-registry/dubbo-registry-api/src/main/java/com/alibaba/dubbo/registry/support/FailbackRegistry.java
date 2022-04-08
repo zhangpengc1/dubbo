@@ -39,6 +39,8 @@ import java.util.concurrent.TimeUnit;
 /**
  * FailbackRegistry. (SPI, Prototype, ThreadSafe)
  *
+ * 失败重试的抽象能力
+ *
  */
 public abstract class FailbackRegistry extends AbstractRegistry {
 
@@ -48,14 +50,19 @@ public abstract class FailbackRegistry extends AbstractRegistry {
     // Timer for failure retry, regular check if there is a request for failure, and if there is, an unlimited retry
     private final ScheduledFuture<?> retryFuture;
 
+    // 发起注册失败的URL集合
     private final Set<URL> failedRegistered = new ConcurrentHashSet<URL>();
 
+    // 取消注册失败的URL集合
     private final Set<URL> failedUnregistered = new ConcurrentHashSet<URL>();
 
+    // 发起订阅失败的监听器集合
     private final ConcurrentMap<URL, Set<NotifyListener>> failedSubscribed = new ConcurrentHashMap<URL, Set<NotifyListener>>();
 
+    // 取消订阅失败的监听器集合
     private final ConcurrentMap<URL, Set<NotifyListener>> failedUnsubscribed = new ConcurrentHashMap<URL, Set<NotifyListener>>();
 
+    // 通知失败的URL集合
     private final ConcurrentMap<URL, Map<NotifyListener, List<URL>>> failedNotified = new ConcurrentHashMap<URL, Map<NotifyListener, List<URL>>>();
 
     /**
@@ -308,6 +315,13 @@ public abstract class FailbackRegistry extends AbstractRegistry {
     }
 
     // Retry the failed actions
+
+    /**
+     * 重试
+     *
+     * 在定时器中调用retry方法的时候，会把这五个集合分别遍历和重试，重试成功则从集合中移除。FailbackRegistry实现了 subscribe> unsubscribe等通用方法，里面调用了未实现的模板方法，会由子类实现。
+     * 通用方法会调用这些模板方法，如果捕获到异常，则会把URL添加到对应的重试集合中，以供定时器去重试
+     */
     protected void retry() {
         if (!failedRegistered.isEmpty()) {
             Set<URL> failed = new HashSet<URL>(failedRegistered);
@@ -450,6 +464,7 @@ public abstract class FailbackRegistry extends AbstractRegistry {
     }
 
     // ==== Template method ====
+    // 模版方法
 
     protected abstract void doRegister(URL url);
 

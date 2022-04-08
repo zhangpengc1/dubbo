@@ -31,11 +31,17 @@ import java.util.List;
 
 /**
  * ListenerProtocol
+ *
+ *
+ * ProtocolFilterWrapper虽然继承了 Protocol接口，但是其构造函数中又注入了一个
+ * Protocol类型的参数。因此ProtocolFilterWrapper会被认定为Wrapper类。这是一种装饰器
+ * 模式，把通用的抽象逻辑进行封装或对子类进行增强，让子类可以更加专注具体的实现
  */
 public class ProtocolFilterWrapper implements Protocol {
 
     private final Protocol protocol;
 
+    // 实现了 Protocol,但构造函数中又传入了一个 Protocol 类型的参数，框架会自动注入
     public ProtocolFilterWrapper(Protocol protocol) {
         if (protocol == null) {
             throw new IllegalArgumentException("protocol == null");

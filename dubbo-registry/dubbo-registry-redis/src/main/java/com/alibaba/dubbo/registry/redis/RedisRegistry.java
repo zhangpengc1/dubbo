@@ -159,6 +159,9 @@ public class RedisRegistry extends FailbackRegistry {
         }, expirePeriod / 2, expirePeriod / 2, TimeUnit.MILLISECONDS);
     }
 
+    /**
+     * 续期
+     */
     private void deferExpired() {
         for (Map.Entry<String, JedisPool> entry : jedisPools.entrySet()) {
             JedisPool jedisPool = entry.getValue();

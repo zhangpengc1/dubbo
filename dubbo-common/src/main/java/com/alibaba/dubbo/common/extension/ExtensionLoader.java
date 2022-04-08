@@ -55,6 +55,24 @@ import java.util.regex.Pattern;
  * @see com.alibaba.dubbo.common.extension.SPI
  * @see com.alibaba.dubbo.common.extension.Adaptive
  * @see com.alibaba.dubbo.common.extension.Activate
+ * <p>
+ * Class缓存：Dubbo SPI获取扩展类时，会先从缓存中读取。如果缓存中不存在，则加
+ * 载配置文件，根据配置把Class缓存到内存中，并不会直接全部初始化。
+ * <p>
+ * 实例缓存：基于性能考虑，Dubbo框架中不仅缓存Class,也会缓存Class实例化后的
+ * 对象。每次获取的时候，会先从缓存中读取，如果缓存中读不到，则重新加载并缓存
+ * 起来。这也是为什么Dubbo SPI相对Java SPI性能上有优势的原因，因为Dubbo SPI
+ * 缓存的Class并不会全部实例化，而是按需实例化并缓存，因此性能更好。
+ * <p>
+ * 被缓存的Class和对象实例可以根据不同的特性分为不同的类别：
+ * <p>
+ * 1 普通扩展类。最基础的，配置在SPI配置文件中的扩展类实现。
+ * 2 包装扩展类。这种Wrapper类没有具体的实现，只是做了通用逻辑的抽象，并且需要
+ * 在构造方法中传入一个具体的扩展接口的实现。属于Dubbo的自动包装特性，该特性会在4.1.5
+ * 节中详细介绍。
+ * 3 自适应扩展类。一个扩展接口会有多种实现类，具体使用哪个实现类可以不写死在配
+ * 置或代码中，在运行时，通过传入URL中的某些参数动态来确定。这属于扩展点的自适应特性， 使用的@Adaptive注解也会在4.1.5节中详细介绍。
+ * 4 其他缓存，如扩展类加载器缓存、扩展名缓存等。
  */
 public class ExtensionLoader<T> {
 
@@ -68,8 +86,10 @@ public class ExtensionLoader<T> {
 
     private static final Pattern NAME_SEPARATOR = Pattern.compile("\\s*[,]+\\s*");
 
+    // 扩展类与对应的扩展类加载器缓存
     private static final ConcurrentMap<Class<?>, ExtensionLoader<?>> EXTENSION_LOADERS = new ConcurrentHashMap<Class<?>, ExtensionLoader<?>>();
 
+    // 扩展类与类初始化后的实例
     private static final ConcurrentMap<Class<?>, Object> EXTENSION_INSTANCES = new ConcurrentHashMap<Class<?>, Object>();
 
     // ==============================
@@ -78,17 +98,28 @@ public class ExtensionLoader<T> {
 
     private final ExtensionFactory objectFactory;
 
+    // 扩展类与扩展名缓存
     private final ConcurrentMap<Class<?>, String> cachedNames = new ConcurrentHashMap<Class<?>, String>();
 
+    // 普通扩展类缓存，不包括自适应拓展类和Wrapper 类
     private final Holder<Map<String, Class<?>>> cachedClasses = new Holder<Map<String, Class<?>>>();
 
+    // 扩展名的缓存
     private final Map<String, Activate> cachedActivates = new ConcurrentHashMap<String, Activate>();
+
+    // 扩展名与扩展对象缓存
     private final ConcurrentMap<String, Holder<Object>> cachedInstances = new ConcurrentHashMap<String, Holder<Object>>();
+
+    // 实例化后的自适应（Adaptive 扩展对象，只能同时存在一个
     private final Holder<Object> cachedAdaptiveInstance = new Holder<Object>();
+
+    // 自适应扩展类缓存
     private volatile Class<?> cachedAdaptiveClass = null;
+
     private String cachedDefaultName;
     private volatile Throwable createAdaptiveInstanceError;
 
+    // Wrapper类缓存
     private Set<Class<?>> cachedWrapperClasses;
 
     private Map<String, IllegalStateException> exceptions = new ConcurrentHashMap<String, IllegalStateException>();
@@ -288,6 +319,28 @@ public class ExtensionLoader<T> {
     /**
      * Find the extension with the given name. If the specified name is not found, then {@link IllegalStateException}
      * will be thrown.
+     * <p>
+     * getExtension (String name)是整个扩展加载器中最核心的方法，实现了一个完整的普通扩展类加载过程。
+     * 加载过程中的每一步，都会先检查缓存中是否己经存在所需的数据，如果存在
+     * 则直接从缓存中读取，没有则重新加载。这个方法每次只会根据名称返回一个扩展点实现类。
+     * <p>
+     *
+     * 初始化的过程可以分为4步：
+     * 1.框架读取SPI对应路径下的配置文件，并根据配置加载所有扩展类并缓存(不初始化)。
+     * 2.根据传入的名称初始化对应的扩展类
+     * 3.尝试查找符合条件的包装类：包含扩展点的setter方法，
+     * 例如setProtocol(Protocol protocol)方法会自动注入protocol扩展点实现；包含与扩展点类型相同的构造函数，为其注入扩
+     * 展类实例，例如本次初始化了一个Class A,初始化完成后，会寻找构造参数中需要Class A的
+     * 包装类(Wrapper),然后注入Class A实例，并初始化这个包装类。
+     *
+     * 4.返回对应的扩展类实例
+     * <p>
+     * 实现原理：
+     * 1.当调用getExtension(String name)方法时，会先检查缓存中是否有现成的数据，没有则
+     * 调用createExtension开始创建。这里有个特殊点，如果getExtension传入的name是true,则加载并返回默认扩展类。
+     * 2.在调用createExtension开始创建的过程中，也会先检查缓存中是否有配置信息，如果不存在扩展类，
+     * 则会从 META-INF/services/> META-INF/dubbo/、META-INF/dubbo/internal/这几个路径中读取所有的配置文件，
+     * 通过I/O读取字符流，然后通过解析字符串，得到配置文件中对应的扩展点实现类的全称(如 com.alibaba.dubbo.common.extensionloader.activate.impl.GroupActivateExtImpl)
      */
     @SuppressWarnings("unchecked")
     public T getExtension(String name) {
@@ -432,6 +485,19 @@ public class ExtensionLoader<T> {
         }
     }
 
+    /**
+     * getAdaptiveExtension也相对独立，只有加载配置信息部分与getExtension共用了同一个方法。
+     * 和获取普通扩展类一样，框架会先检查缓存中是否有已经初始化化好的Adaptive实例，
+     * 没有则调用createAdaptiveExtension重新初始化
+     * <p>
+     * 初始化过程分为4步：
+     * 1.和getExtension 一样先加载配置文件。
+     * 2.生成自适应类的代码字符串。
+     * 3.获取类加载器和编译器，并用编译器编译刚才生成的代码字符串。Dubbo 一共有三种类型的编译器实现，这些内容会在4.4节讲解。
+     * 4.返回对应的自适应类实例。
+     *
+     * @return
+     */
     @SuppressWarnings("unchecked")
     public T getAdaptiveExtension() {
         Object instance = cachedAdaptiveInstance.get();
@@ -552,12 +618,19 @@ public class ExtensionLoader<T> {
         return clazz;
     }
 
+    /**
+     * 获取扩展类class
+     *
+     * @return
+     */
     private Map<String, Class<?>> getExtensionClasses() {
+        // 先尝试从缓存中获取没有则调用
         Map<String, Class<?>> classes = cachedClasses.get();
         if (classes == null) {
             synchronized (cachedClasses) {
                 classes = cachedClasses.get();
                 if (classes == null) {
+                    // 加载扩展类class
                     classes = loadExtensionClasses();
                     cachedClasses.set(classes);
                 }

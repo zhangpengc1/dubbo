@@ -70,9 +70,17 @@ public abstract class AbstractRegistry implements Registry {
     private final AtomicLong lastCacheChanged = new AtomicLong();
     private final Set<URL> registered = new ConcurrentHashSet<URL>();
     private final ConcurrentMap<URL, Set<NotifyListener>> subscribed = new ConcurrentHashMap<URL, Set<NotifyListener>>();
+
+    // 内存中的服务缓存对象
+    // 内存中的缓存notified是ConcurrentHashMap里面又嵌套了一个Map,外层Map的key
+    // 是消费者的 URL,内层 Map 的 key 是分类，包含 providers> consumers> routes> configurators
+    // 四种。value则是对应的服务列表，对于没有服务提供者提供服务的URL,它会以特殊的empty://
+    // 前缀开头。
     private final ConcurrentMap<URL, Map<String, List<URL>>> notified = new ConcurrentHashMap<URL, Map<String, List<URL>>>();
     private URL registryUrl;
+
     // Local disk cache file
+    // 磁盘文件服务缓存对象
     private File file;
 
     public AbstractRegistry(URL url) {
@@ -139,6 +147,11 @@ public abstract class AbstractRegistry implements Registry {
         return lastCacheChanged;
     }
 
+    /**
+     * 执行保存逻辑
+     *
+     * @param version
+     */
     public void doSaveProperties(long version) {
         if (version < lastCacheChanged.get()) {
             return;
@@ -190,10 +203,23 @@ public abstract class AbstractRegistry implements Registry {
         }
     }
 
+    /**
+     * 加载缓存
+     *
+     * 在服务初始化的时候，AbstractRegistry构造函数里会从本地磁盘文件中把持久化的注册
+     * 数据读到Properties对象里，并加载到内存缓存中
+     *
+     * Properties保存了所有服务提供者的URL,使用URL#serviceKey()作为key,提供者列表、路由规则列表、配置规则列表等作为value。由于value是列表，当存在多个的时候使用空格隔开。
+     * 还有一个特殊的key.registies,保存所有的注册中心的地址。
+     * 如果应用在启动过程中注册中心无法连接或宕机，则Dubbo框架会自动通过本地缓存加载Invokerso
+     */
     private void loadProperties() {
+        //
+
         if (file != null && file.exists()) {
             InputStream in = null;
             try {
+                // 读取磁盘上的文件
                 in = new FileInputStream(file);
                 properties.load(in);
                 if (logger.isInfoEnabled()) {
@@ -348,6 +374,13 @@ public abstract class AbstractRegistry implements Registry {
         }
     }
 
+    /**
+     * AbstractRegistry#notify方法中封装了更新内存缓存和更新文件缓存的逻辑。当客户端第一
+     * 次订阅获取全量数据，或者后续由于订阅得到新数据时，都会调用该方法进行保存
+     *
+     *
+     * @param urls
+     */
     protected void notify(List<URL> urls) {
         if (urls == null || urls.isEmpty()) return;
 
@@ -415,6 +448,13 @@ public abstract class AbstractRegistry implements Registry {
         }
     }
 
+    /**
+     * 保存缓存
+     *
+     * 缓存的保存有同步和异步两种方式。异步会使用线程池异步保存，如果线程在执行过程中
+     * 出现异常，则会再次调用线程池不断重试，
+     * @param url
+     */
     private void saveProperties(URL url) {
         if (file == null) {
             return;
@@ -436,8 +476,10 @@ public abstract class AbstractRegistry implements Registry {
             properties.setProperty(url.getServiceKey(), buf.toString());
             long version = lastCacheChanged.incrementAndGet();
             if (syncSaveFile) {
+                // 同步保存
                 doSaveProperties(version);
             } else {
+                // 异步保存，放入线程池。会传入一个AtomicLong 的版本号，保证数据是最新的
                 registryCacheExecutor.execute(new SaveProperties(version));
             }
         } catch (Throwable t) {

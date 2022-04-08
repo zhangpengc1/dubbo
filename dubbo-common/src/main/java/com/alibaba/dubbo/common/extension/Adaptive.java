@@ -29,6 +29,22 @@ import java.lang.annotation.Target;
  *
  * @see ExtensionLoader
  * @see URL
+ *
+ * 该注解也可以传入value参数，是一个数组
+ * Adaptive可以传入多个key值，在初始化Adaptive注解的接口时，会先对传入的URL进行key值匹配，
+ * 第一个key没匹配上则匹配第二个，以此类推。直到所有的key匹配完毕，如果还没有匹配到， 则会使用“驼峰规则”匹配，如果也没匹配到，则会抛出IllegalStateException异常。
+ *
+ * 什么是"驼峰规则”呢？如果包装类（Wrapper 没有用Adaptive指定key值，
+ * 则Dubbo会自动把接口名称根据驼峰大小写分开，并用符号连接起来，以此来作为默认实现类的名
+ * 称，如 org.apache.dubbo.xxx.YyylnvokerWpappep 中的 YyylnvokerWrapper 会被转换为
+ * yyy.invoker.wrappero
+ *
+ * 最后，为什么有些实现类上会标注©Adaptive呢？放在实现类上，主要是为了直接固定对
+ * 应的实现而不需要动态生成代码实现，就像策略模式直接确定实现类。在代码中的实现方式是： ExtensionLoader中会缓存两个与©Adaptive有关的对象，一个缓存在cachedAdaptiveClass中， 即Adaptive具体实现类的Class类型；另外一个缓存在cachedAdaptivelnstance中，即Class
+ * 的具体实例化对象。在扩展点初始化时，如果发现实现类有@Adaptive注解，则直接赋值给
+ * cachedAdaptiveClass ,后续实例化类的时候，就不会再动态生成代码，直接实例化
+ * cachedAdaptiveClass,并把实例缓存到cachedAdaptivelnstance中。如果注解在接口方法上， 则会根据参数，动态获得扩展点的实现，会生成Adaptive类
+ *
  */
 @Documented
 @Retention(RetentionPolicy.RUNTIME)

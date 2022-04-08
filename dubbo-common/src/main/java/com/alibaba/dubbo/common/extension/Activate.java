@@ -38,6 +38,12 @@ import java.lang.annotation.Target;
  * @see SPI
  * @see URL
  * @see ExtensionLoader
+ *
+ * @Activate可以标记在类、接口、枚举类和方法上。主要使用在有多个扩展点实现、需要根
+ * 据不同条件被激活的场景中，如Filter需要多个同时激活，因为每个Filter实现的是不同的功能。
+ * ©Activate可传入的参数很多。
+ *
+ *
  */
 @Documented
 @Retention(RetentionPolicy.RUNTIME)
@@ -49,6 +55,8 @@ public @interface Activate {
      *
      * @return group names to match
      * @see ExtensionLoader#getActivateExtension(URL, String, String)
+     *
+     * URL中的分组如果匹配则激活，则可以设置多个
      */
     String[] group() default {};
 
@@ -62,12 +70,15 @@ public @interface Activate {
      * @return URL parameter keys
      * @see ExtensionLoader#getActivateExtension(URL, String)
      * @see ExtensionLoader#getActivateExtension(URL, String, String)
+     *
+     * 查找URL中如果含有该key值，则会激活
      */
     String[] value() default {};
 
     /**
      * Relative ordering info, optional
      *
+     * 填写扩展点列表，表示哪些扩展点要在本扩展点之前
      * @return extension list which should be put before the current one
      */
     String[] before() default {};
@@ -75,6 +86,7 @@ public @interface Activate {
     /**
      * Relative ordering info, optional
      *
+     * 同上，表示哪些需要在本扩展点之后
      * @return extension list which should be put after the current one
      */
     String[] after() default {};
@@ -82,6 +94,7 @@ public @interface Activate {
     /**
      * Absolute ordering info, optional
      *
+     * 整型，直接的排序信息
      * @return absolute ordering info
      */
     int order() default 0;
