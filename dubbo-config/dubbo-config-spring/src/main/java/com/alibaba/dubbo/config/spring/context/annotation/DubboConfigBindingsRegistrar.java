@@ -38,17 +38,30 @@ public class DubboConfigBindingsRegistrar implements ImportBeanDefinitionRegistr
 
     private ConfigurableEnvironment environment;
 
+    /**
+     * 处理用户指定配置代码的逻辑比较简单，在DubboConfigBindingRegistrar实现中做
+     * 了下面几件事情：
+     *
+     * 如果用户配置了属性，比如dubbo.application.name,则会自动创建对应Spring Bean到容器。
+     *
+     * 注册和配置对象Bean属性绑定处理器DubboConfigBindingBeanPostProcessor,委托Spring做属性值绑定。
+     *
+     * @param importingClassMetadata
+     * @param registry
+     */
     @Override
     public void registerBeanDefinitions(AnnotationMetadata importingClassMetadata, BeanDefinitionRegistry registry) {
 
         AnnotationAttributes attributes = AnnotationAttributes.fromMap(
                 importingClassMetadata.getAnnotationAttributes(EnableDubboConfigBindings.class.getName()));
 
+        // 获取 EnableDubboConfigBindings注解所有值
         AnnotationAttributes[] annotationAttributes = attributes.getAnnotationArray("value");
 
         DubboConfigBindingRegistrar registrar = new DubboConfigBindingRegistrar();
         registrar.setEnvironment(environment);
 
+        // 将每个 EnableDubboConfigBinding注解包含的Bean注册到Spring容器
         for (AnnotationAttributes element : annotationAttributes) {
 
             registrar.registerBeanDefinitions(element, registry);

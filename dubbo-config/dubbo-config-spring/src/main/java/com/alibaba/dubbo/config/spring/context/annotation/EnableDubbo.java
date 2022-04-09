@@ -36,6 +36,14 @@ import java.lang.annotation.Target;
  * @see DubboComponentScan
  * @see EnableDubboConfig
  * @since 2.5.8
+ *
+ * 注解处理逻辑主要包含3部分内容，
+ * 第一部分是如果用户使用了配置文件，则框架按需生成对应Bean
+ * 第二部分是要将所有使用Dubbo的注解^Service的class提升为Bean,
+ * 第三部分要为使用^Reference注解的字段或方法注入代理对象
+ *
+ *
+ *
  */
 @Target({ElementType.TYPE})
 @Retention(RetentionPolicy.RUNTIME)

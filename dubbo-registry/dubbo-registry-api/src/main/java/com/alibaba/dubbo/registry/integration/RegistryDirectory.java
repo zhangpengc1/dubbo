@@ -343,6 +343,19 @@ public class RegistryDirectory<T> extends AbstractDirectory<T> implements Notify
 
     /**
      * Turn urls into invokers, and if url has been refer, will not re-reference.
+     * Dubbo服务消费服务通知
+     *
+     *
+     * Dubbo框架允许在消费方配置只消费指定协议的服务，具体协议过滤在①中进行处理，支
+     * 持消费多个协议，允许消费多个协议时，在配置Protocol值时用逗号分隔即可。在②中消费信
+     * 息是客户端处理的，需要合并服务端相关信息，比如远程IP和端口等信息，通过注册中心获取
+     * 这些信息，解耦了消费方强绑定配置。在③中消除重复推送的服务列表，防止重复引用。在④
+     * 中使用具体的协议发起远程连接等操作。在真实远程连接建立后也会发起拦截器构建操作，处理机制类似，只不过处理逻辑在ProtocolFilterWrapper#refer中触发链式构造。
+     *
+     * 具体Invoker创建是在DubboProtocol#refer中实现的，Dubbo协议在返回Dubbolnvoker
+     * 对象之前会先初始化客户端连接对象。Dubbo支持客户端是否立即和远程服务建立TCP连接是
+     * 由参数是否配置了 lazy属性决定的，默认会全部连接。DubboProtocol#refer内部会调用
+     * DubboProtocol#initClient负责建立客户端连接和初始化Handle
      *
      * @param urls
      * @return invokers
@@ -354,6 +367,7 @@ public class RegistryDirectory<T> extends AbstractDirectory<T> implements Notify
         }
         Set<String> keys = new HashSet<String>();
         String queryProtocols = this.queryMap.get(Constants.PROTOCOL_KEY);
+        // 1 根据消费方protocol配置过滤不匹配协议
         for (URL providerUrl : urls) {
             // If protocol is configured at the reference side, only the matching protocol is selected
             if (queryProtocols != null && queryProtocols.length() > 0) {
@@ -377,9 +391,11 @@ public class RegistryDirectory<T> extends AbstractDirectory<T> implements Notify
                         + ", supported protocol: " + ExtensionLoader.getExtensionLoader(Protocol.class).getSupportedExtensions()));
                 continue;
             }
+            // ② 合并provider端配置数据,比如服务端IP和port等
             URL url = mergeUrl(providerUrl);
 
             String key = url.toFullString(); // The parameter urls are sorted
+            // ③忽略重复推送的服务列表
             if (keys.contains(key)) { // Repeated url
                 continue;
             }
@@ -395,6 +411,7 @@ public class RegistryDirectory<T> extends AbstractDirectory<T> implements Notify
                     } else {
                         enabled = url.getParameter(Constants.ENABLED_KEY, true);
                     }
+                    // ④使用具体协议创建远程连接
                     if (enabled) {
                         invoker = new InvokerDelegate<T>(protocol.refer(serviceType, url), url, providerUrl);
                     }

@@ -24,6 +24,11 @@ import com.alibaba.dubbo.common.extension.SPI;
  * RegistryFactory. (SPI, Singleton, ThreadSafe)
  *
  * @see com.alibaba.dubbo.registry.support.AbstractRegistryFactory
+ *
+ * RegistryFactory工厂类通ii@Adaptive(("protocol"})注解动态查找注册中心实
+ * 现，根据URL中的protocol参数动态选择对应的注册中心工厂，并初始化具体的注册中心客户
+ * 端
+ *
  */
 @SPI("dubbo")
 public interface RegistryFactory {

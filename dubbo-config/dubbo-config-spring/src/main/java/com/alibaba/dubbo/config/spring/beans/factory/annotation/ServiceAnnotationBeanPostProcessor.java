@@ -67,6 +67,17 @@ import static org.springframework.core.annotation.AnnotationUtils.findAnnotation
 import static org.springframework.util.ClassUtils.resolveClassName;
 
 /**
+ * 服务注解扫描和注册
+ *
+ * 是如何对服务提供者通过注^Service进行暴露?
+ *
+ * 注解扫描也委托给Spring,本质上使用asm库进行字节码扫描注解元数据，可以参考Spring源代码SimpleMetadataReader
+ * 当用户使用注解 @DubboComponentScan 时，会激活 DubboComponentScanRegistrar, 同时生成 ServiceAnnotationBeanPostProcessor 和 ReferenceAnnotationBeanPostProcessor
+ * 两种处理器，通过名称很容易知道分别是处理服务注解和消费注解。我们首先分析服务注解逻辑，
+ * 因为 ServiceAnnotationBeanPostProcessor 处理器实现了 BeanDefinitionRegistryPostProcessor
+ * 接口，Spring容器中所有Bean注册之后回调postProcessBeanDefinitionRegistry方法开始扫描旧Service注解并注入容器
+ *
+ *
  * {@link Service} Annotation
  * {@link BeanDefinitionRegistryPostProcessor Bean Definition Registry Post Processor}
  *
@@ -98,12 +109,25 @@ public class ServiceAnnotationBeanPostProcessor implements BeanDefinitionRegistr
         this.packagesToScan = packagesToScan;
     }
 
+    /**
+     * 核心步骤打点分析：
+     * ①：Dubbo框架首先会提取用户配置的扫描包名称，因为包名可能使用${...}占位符，因
+     * 此框架会调用Spring的占位符解析做进一步解码。②：开始真正的注解扫描，委托Spring对所
+     * 有符合包名的.class文件做字节码分析，最终通过③配置扫描@Service注解作为过滤条件。在
+     * ④中将仞Service标注的服务提升为不同的Bean,这里并没有设置beanClasso在⑤中主要根据
+     * 注册的普通Bean生成ServiceBean的占位符，用于后面的属性注入逻辑。在⑥中会提取普通Bean
+     * 上标注的Service注解生成新的RootBeanDefinition,用于Spring启动后的服务暴露，具体服
+     * 务暴露的逻辑会在后面详细解析。
+     * @param registry
+     * @throws BeansException
+     */
     @Override
     public void postProcessBeanDefinitionRegistry(BeanDefinitionRegistry registry) throws BeansException {
-
+        // step1 获取用户注解配置的包扫描
         Set<String> resolvedPackagesToScan = resolvePackagesToScan(packagesToScan);
 
         if (!CollectionUtils.isEmpty(resolvedPackagesToScan)) {
+            // step2 触发ServiceBean定义和注入
             registerServiceBeans(resolvedPackagesToScan, registry);
         } else {
             if (logger.isWarnEnabled()) {
@@ -129,20 +153,24 @@ public class ServiceAnnotationBeanPostProcessor implements BeanDefinitionRegistr
 
         scanner.setBeanNameGenerator(beanNameGenerator);
 
+        // step3 指定扫描dubbo的注解^Service,不会扫描Spring的Service注解
         scanner.addIncludeFilter(new AnnotationTypeFilter(Service.class));
 
         for (String packageToScan : packagesToScan) {
 
             // Registers @Service Bean first
+            // step4 将@Servcie 作为不同 Bean 注入容器
             scanner.scan(packageToScan);
 
             // Finds all BeanDefinitionHolders of @Service whether @ComponentScan scans or not.
+            // step5 对扫描的服务创建 BeanDefinitionHolder,用于生成ServiceBean 定义
             Set<BeanDefinitionHolder> beanDefinitionHolders =
                     findServiceBeanDefinitionHolders(scanner, packageToScan, registry, beanNameGenerator);
 
             if (!CollectionUtils.isEmpty(beanDefinitionHolders)) {
 
                 for (BeanDefinitionHolder beanDefinitionHolder : beanDefinitionHolders) {
+                    // step6 注册ServiceBean定义并做数据绑定和解析
                     registerServiceBean(beanDefinitionHolder, registry, scanner);
                 }
 

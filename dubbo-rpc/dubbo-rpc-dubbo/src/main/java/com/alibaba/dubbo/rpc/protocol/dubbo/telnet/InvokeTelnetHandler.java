@@ -48,6 +48,20 @@ public class InvokeTelnetHandler implements TelnetHandler {
     static final String INVOKE_METHOD_LIST_KEY = "telnet.invoke.method.list";
 
 
+    /**
+     * Telnet本地方法调用
+     *
+     * 当本地没有客户端，想测试服务端提供的方法时，可以使用Telnet登录到远程服务器(Telnet IP port),
+     * 根据invoke指令执行方法调用来获得结果。当用户输入invoke指令时， 会被转发到对应的Handlero
+     * 在①中提取方法调用信息(去除参数信息)，在②中会提取调用括号内的信息作为参数值。
+     * 在③中提取方法调用的接口信息，在④中提取接口调用的方法名称。
+     * 在⑤中会将传递的JSON参数值转换成fastjson对象,然后在⑥中根据接口名称、方法和参数值查找对应的方法和Invoker对象。
+     * 在真正方法调用前，需要通过⑦把fastjson对象转换成Java对象，在⑧中触发方法调用并返回结果值。
+     *
+     * @param channel
+     * @param message
+     * @return
+     */
     @Override
     public String telnet(Channel channel, String message) {
         if (message == null || message.length() == 0) {
@@ -62,15 +76,20 @@ public class InvokeTelnetHandler implements TelnetHandler {
         if (i < 0 || !message.endsWith(")")) {
             return "Invalid parameters, format: service.method(args)";
         }
+        // ①提取调用方法(由接口名.方法名组成)
         String method = message.substring(0, i).trim();
+        // ② 提取调用方法参数值
         String args = message.substring(i + 1, message.length() - 1).trim();
         i = method.lastIndexOf(".");
         if (i >= 0) {
+            // ③ 提取方法前面的接口
             service = method.substring(0, i).trim();
+            // ④ 提取方法名称
             method = method.substring(i + 1).trim();
         }
         List<Object> list;
         try {
+            // ⑤ 将参数JSON串转换成JSON对象
             list = JSON.parseArray("[" + args + "]", Object.class);
         } catch (Throwable t) {
             return "Invalid json argument, cause: " + t.getMessage();
@@ -104,6 +123,7 @@ public class InvokeTelnetHandler implements TelnetHandler {
                         if (methodList.size() == 1) {
                             invokeMethod = methodList.get(0);
                         } else {
+                            // ⑥ 接口名、方法、参数值和类型作为检索方法的条件
                             List<Method> matchMethods = findMatchMethods(methodList, list);
                             if (CollectionUtils.isNotEmpty(matchMethods)) {
                                 if (matchMethods.size() == 1) {
@@ -125,9 +145,11 @@ public class InvokeTelnetHandler implements TelnetHandler {
         if (invoker != null) {
             if (invokeMethod != null) {
                 try {
+                    // ⑦ 将3SON参数值转换成Java对象值
                     Object[] array = PojoUtils.realize(list.toArray(), invokeMethod.getParameterTypes(), invokeMethod.getGenericParameterTypes());
                     RpcContext.getContext().setLocalAddress(channel.getLocalAddress()).setRemoteAddress(channel.getRemoteAddress());
                     long start = System.currentTimeMillis();
+                    // ⑧ 根据查找到的Invoker、构造Rpclnvocation进行方法调用
                     Object result = invoker.invoke(new RpcInvocation(invokeMethod, array)).recreate();
                     long end = System.currentTimeMillis();
                     buf.append(JSON.toJSONString(result));

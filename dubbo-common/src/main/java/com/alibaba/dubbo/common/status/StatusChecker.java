@@ -20,6 +20,9 @@ import com.alibaba.dubbo.common.extension.SPI;
 
 /**
  * StatusChecker
+ *
+ * 健康检查扩展点
+ *
  */
 @SPI
 public interface StatusChecker {

@@ -38,6 +38,14 @@ import java.util.List;
 import java.util.Map;
 
 /**
+ * 服务引用
+ *
+ * 不管是XML还是注解，都会转换成ReferenceBea
+ * 继承自ReferenceConfig
+ *
+ * Dubbo支持多注册中心同时消费，如果配置了服务同时注册多个注册中心，则会在
+ * ReferenceConfig#createProxy 中合并成一个 Invoke.
+ *
  * ReferenceFactoryBean
  *
  * @export
@@ -56,6 +64,7 @@ public class ReferenceBean<T> extends ReferenceConfig<T> implements FactoryBean,
         super(reference);
     }
 
+    // 会调用静态方法保存Spring上下文，即一个服务被发布或被引用的时候，对应的Spring 上下文会被保存下来。
     @Override
     public void setApplicationContext(ApplicationContext applicationContext) {
         this.applicationContext = applicationContext;

@@ -34,14 +34,21 @@ import java.util.Set;
 
 /**
  * SpringExtensionFactory
+ *
+ * 该工厂提供了保存Spring上下文的静态方法，可以把Spring上下文保存到Set集合中。
+ * 当调用getExtension获取扩展类时，会遍历Set集合中所有的Spring上下文，
+ * 先根据名字依次从每个Spring容器中进行匹配，如果根据名字没匹配到，则根据类型去匹配，如果还没匹配到则返回nul
+ *
  */
 public class SpringExtensionFactory implements ExtensionFactory {
     private static final Logger logger = LoggerFactory.getLogger(SpringExtensionFactory.class);
 
+    // 用能自动去重的 Set 保存 Spring 上下文
     private static final Set<ApplicationContext> contexts = new ConcurrentHashSet<ApplicationContext>();
 
     private static final ApplicationListener shutdownHookListener = new ShutdownHookListener();
 
+    // Spring的上下文引用会在这里被保存。spring上下文什么时候怎么保存的？看下这个方法的调用链ReferenceBean和ServiceBean
     public static void addApplicationContext(ApplicationContext context) {
         contexts.add(context);
         BeanFactoryUtils.addApplicationListener(context, shutdownHookListener);
@@ -63,6 +70,7 @@ public class SpringExtensionFactory implements ExtensionFactory {
     @Override
     @SuppressWarnings("unchecked")
     public <T> T getExtension(Class<T> type, String name) {
+        // 遍历所有Spring 上下文，先根据名字从Spring容器中查找
         for (ApplicationContext context : contexts) {
             if (context.containsBean(name)) {
                 Object bean = context.getBean(name);
@@ -78,6 +86,7 @@ public class SpringExtensionFactory implements ExtensionFactory {
             return null;
         }
 
+        // 如果根据名字没找到,则直接通过类型查找
         for (ApplicationContext context : contexts) {
             try {
                 return context.getBean(type);
@@ -91,7 +100,7 @@ public class SpringExtensionFactory implements ExtensionFactory {
         }
 
         logger.warn("No spring extension (bean) named:" + name + ", type:" + type.getName() + " found, stop get bean.");
-
+        // 根据类型也找不到，只能返回null 了
         return null;
     }
 

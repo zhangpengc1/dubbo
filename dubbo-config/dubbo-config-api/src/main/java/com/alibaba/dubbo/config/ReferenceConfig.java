@@ -341,10 +341,28 @@ public class ReferenceConfig<T> extends AbstractReferenceConfig {
         ApplicationModel.initConsumerModel(getUniqueServiceName(), consumerModel);
     }
 
+    /**
+     * 多协议多注册中心暴露
+     *
+     * 在createProxy实现中完成了远程代理对象的创建及代理对象的转换等工作，为了聚焦重
+     * 点和方便讲解，对现有代码做了部分删减(不影响理解核心流程)。
+     *
+     * 在①中会优先判断是否在同一个JVM中包含要消费的服务，默认场景下，Dubbo会通过②找出内存中injvm协议的服务， 其实injvm协议是比较好理解的，前面提到服务实例都放到内存map中，
+     * 消费也是直接获取实例调用而已。③：主要在注册中心中追加消费者元数据信息，应用启动时订阅注册中心、服务
+     * 提供者参数等合并时会用到这部分信息。④：处理只有一个注册中心的场景，这种场景在客户
+     * 端中是最常见的，客户端启动拉取服务元数据，订阅provider、路由和配置变更。⑤和⑥：分别处理多注册中心的场景
+     *
+     * 当经过注册中心消费时，主要通过RegistryProtocol#refer触发数据拉取、订阅和服务
+     * Invoker转换等操作，其中最核心的数据结构是RegistryDirector
+     *
+     * @param map
+     * @return
+     */
     @SuppressWarnings({"unchecked", "rawtypes", "deprecation"})
     private T createProxy(Map<String, String> map) {
         URL tmpUrl = new URL("temp", "localhost", 0, map);
         final boolean isJvmRefer;
+        // ① 默认检查是否是同一个JVM内部引用
         if (isInjvm() == null) {
             if (url != null && url.length() > 0) { // if a url is specified, don't do local reference
                 isJvmRefer = false;
@@ -360,12 +378,23 @@ public class ReferenceConfig<T> extends AbstractReferenceConfig {
 
         if (isJvmRefer) {
             URL url = new URL(Constants.LOCAL_PROTOCOL, NetUtils.LOCALHOST, 0, interfaceClass.getName()).addParameters(map);
+            // ② 直接使用比jvm 协议从内存中获取实例
             invoker = refprotocol.refer(interfaceClass, url);
             if (logger.isInfoEnabled()) {
                 logger.info("Using injvm service " + interfaceClass.getName());
             }
         } else {
+            // 直连服务消费
+            /**
+             * 在 z1 中允许用分号指定多个直连机器地址，多个直连机器调用会使用负载均衡，更多场景
+             * 是单个直连，但是不建议在生产环境中使用直连模式，因为上游服务发布会影响服务调用方。
+             *
+             * 在 z2 中允许配置注册中心地址，这样可以通过注册中心发现服务消费。在③中指定服务调用协
+             * 议、IP和端口，注意这里的URL没有添加refer和注册中心协议，默认是Dubbo会直接触发
+             * DubboProtocol进行远程消费，不会经过Registryprotocol去做服务发现。
+             */
             if (url != null && url.length() > 0) { // user specified URL, could be peer-to-peer address, or register center's address.
+                // z1 支持使用分号隔开指定的多个直连机器
                 String[] us = Constants.SEMICOLON_SPLIT_PATTERN.split(url);
                 if (us != null && us.length > 0) {
                     for (String u : us) {
@@ -374,8 +403,10 @@ public class ReferenceConfig<T> extends AbstractReferenceConfig {
                             url = url.setPath(interfaceName);
                         }
                         if (Constants.REGISTRY_PROTOCOL.equals(url.getProtocol())) {
+                            //z2  允许直连地址写成注册中心
                             urls.add(url.addParameterAndEncoded(Constants.REFER_KEY, StringUtils.toQueryString(map)));
                         } else {
+                            // z3 直连某一服务提供者
                             urls.add(ClusterUtils.mergeUrl(url, map));
                         }
                     }
@@ -388,6 +419,7 @@ public class ReferenceConfig<T> extends AbstractReferenceConfig {
                         if (monitorUrl != null) {
                             map.put(Constants.MONITOR_KEY, URL.encode(monitorUrl.toFullString()));
                         }
+                        // ③注册中心地址后添加refer存储服务消费元数据信息
                         urls.add(u.addParameterAndEncoded(Constants.REFER_KEY, StringUtils.toQueryString(map)));
                     }
                 }
@@ -397,11 +429,13 @@ public class ReferenceConfig<T> extends AbstractReferenceConfig {
             }
 
             if (urls.size() == 1) {
+                // ④ 单注册中心消费
                 invoker = refprotocol.refer(interfaceClass, urls.get(0));
             } else {
                 List<Invoker<?>> invokers = new ArrayList<Invoker<?>>();
                 URL registryURL = null;
                 for (URL url : urls) {
+                    // ⑤逐个获取注册中心的服务，并添加到 invokers 列表
                     invokers.add(refprotocol.refer(interfaceClass, url));
                     if (Constants.REGISTRY_PROTOCOL.equals(url.getProtocol())) {
                         registryURL = url; // use last registry url
@@ -409,6 +443,7 @@ public class ReferenceConfig<T> extends AbstractReferenceConfig {
                 }
                 if (registryURL != null) { // registry url is available
                     // use AvailableCluster only when register's cluster is available
+                    // ⑥ 通过Cluster将多个Invoker转换成一个 Invoker
                     URL u = registryURL.addParameterIfAbsent(Constants.CLUSTER_KEY, AvailableCluster.NAME);
                     invoker = cluster.join(new StaticDirectory(u, invokers));
                 } else { // not a registry url
@@ -440,6 +475,7 @@ public class ReferenceConfig<T> extends AbstractReferenceConfig {
             logger.info("Refer dubbo service " + interfaceClass.getName() + " from url " + invoker.getUrl());
         }
         // create service proxy
+        // ⑦把Invoker转换成接口代理
         return (T) proxyFactory.getProxy(invoker);
     }
 

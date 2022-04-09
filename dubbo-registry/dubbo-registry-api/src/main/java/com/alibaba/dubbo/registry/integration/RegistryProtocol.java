@@ -129,14 +129,44 @@ public class RegistryProtocol implements Protocol {
         registry.register(registedProviderUrl);
     }
 
+    /**
+     * 注册中心控制服务暴露
+     *
+     * 在将服务实例ref转换成Invoker之后，如果有注册中心时，则会通过RegistryProtocol#export
+     * 进行更细粒度的控制，比如先进行服务暴露再注册服务元数据。注册中心在做服务暴露时依次
+     * 做了以下几件事情
+     *
+     * (1) 委托具体协议(Dubbo)进行服务暴露，创建NettyServer监听端口和保存服务实例。
+     * (2) 创建注册中心对象，与注册中心创建TCP连接。
+     * (3) 注册服务元数据到注册中心。
+     * (4) 订阅configurators节点，监听服务动态属性变更事件。
+     * (5) 服务销毁收尾工作，比如关闭端口、反注册服务信息等。
+     *
+     *
+     * 当服务真实调用时会触发各种拦截器Filter,这个是在哪里初始化的呢？
+     * 在①中进行服务暴露前，框架会做拦截器初始化，Dubbo在加载 protocol 扩展点时会自动注入 Protocol Listenerwrapper 和 ProtocolFilterWrapper
+     *
+     * ProtocolFilterWrapper -> ProtocolListenerWrapper -> DubboProtocol
+     *
+     * 在ProtocolListenerWrapper实现中，在对服务提供者进行暴露时回调对应的监听器方法。
+     * ProtocolFilterWrapper 会调用下一级 ListenerExporterWrapper#export 方法，在该方法内部会
+     * 触发buildlnvokerChain进行拦截器构造
+     *
+     * @param originInvoker
+     * @param <T>
+     * @return
+     * @throws RpcException
+     */
     @Override
     public <T> Exporter<T> export(final Invoker<T> originInvoker) throws RpcException {
         //export invoker
+        //  1 打开端口，把服务实例存储到map
         final ExporterChangeableWrapper<T> exporter = doLocalExport(originInvoker);
 
         URL registryUrl = getRegistryUrl(originInvoker);
 
         //registry provider
+        // ② 创建注册中心实例
         final Registry registry = getRegistry(originInvoker);
         final URL registeredProviderUrl = getRegisteredProviderUrl(originInvoker);
 
@@ -146,6 +176,7 @@ public class RegistryProtocol implements Protocol {
         ProviderConsumerRegTable.registerProvider(originInvoker, registryUrl, registeredProviderUrl);
 
         if (register) {
+            // ③ 服务暴露之后，注册服务元数据
             register(registryUrl, registeredProviderUrl);
             ProviderConsumerRegTable.getProviderWrapper(originInvoker).setReg(true);
         }
@@ -155,6 +186,7 @@ public class RegistryProtocol implements Protocol {
         final URL overrideSubscribeUrl = getSubscribedOverrideUrl(registeredProviderUrl);
         final OverrideListener overrideSubscribeListener = new OverrideListener(overrideSubscribeUrl, originInvoker);
         overrideListeners.put(overrideSubscribeUrl, overrideSubscribeListener);
+        // 4 监听服务接口下 configurators节点，用于处理动态配置
         registry.subscribe(overrideSubscribeUrl, overrideSubscribeListener);
         //Ensure that a new exporter instance is returned every time export
         return new DestroyableExporter<T>(exporter, originInvoker, overrideSubscribeUrl, registeredProviderUrl);
@@ -269,16 +301,47 @@ public class RegistryProtocol implements Protocol {
         return key;
     }
 
+    /**
+     * Dubbo通过注册中心消费
+     *
+     * 这段逻辑主要完成了注册中心实例的创建，元数据注册到注册中心及订阅的功能
+     *
+     * 在①中会根据用户指定的注册中心进行协议替换，具体注册中心协议会在启动时用registry存储对应值。
+     * 在②中会创建注册中心实例，这里的URL其实是注册中心地址，真实消费方的元数据信息是放在refer属性中存储的。
+     * 在③中主要提取消费方refer中保存的元数据信息，如果包含多个分组值则会把调用结果值做合并处理。
+     * 在④中触发真正的服务订阅和Invoker转换。
+     * 在⑤中RegistryDirectory实现了 NotifyListener接口，服务变更会触发这个类回调notify方法，用于重新引用服务。
+     * 在⑥中负责把消费方元数据信息注册到注册中心，比如消费方应用名、IP和端口号等。
+     * 在⑦中处理provider、路由和动态配置订阅。
+     * 在⑧中除了通过Cluster将多个服务合并，同时默认也会启用FailoverCluster策略进行服务调用重试。
+     *
+     * 具体远程Invoker是在哪里创建的呢？客户端调用拦截器又是在哪里构造的呢？
+     * 当在⑦中第一次发起订阅时会进行一次数据拉取操作，同时触发RegistryDirectory#notify方法，这里
+     * 的通知数据是某一个类别的全量数据，比如providers和routers类别数据。当通知providers数
+     * 据时，在RegistryDirectory#toInvokers方法内完成Invoker转换。
+     *
+     * 在⑦中把Invoker转换成接口代理。最终代理接口都会创建InvokerlnvocationHandler,这个类实现了 JDk 的 InvocationHandler 接口，所以服务暴露的
+     * Dubbo接口都会委托给代理去发起远程调用(injvm协议除外)。
+     *
+     * @param type Service class
+     * @param url  URL address for the remote service
+     * @param <T>
+     * @return
+     * @throws RpcException
+     */
     @Override
     @SuppressWarnings("unchecked")
     public <T> Invoker<T> refer(Class<T> type, URL url) throws RpcException {
+        // ①设置具体注册中心协议，比如 ZooKeeper
         url = url.setProtocol(url.getParameter(Constants.REGISTRY_KEY, Constants.DEFAULT_REGISTRY)).removeParameter(Constants.REGISTRY_KEY);
+        // ②创建具体注册中心实例
         Registry registry = registryFactory.getRegistry(url);
         if (RegistryService.class.equals(type)) {
             return proxyFactory.getInvoker((T) registry, type, url);
         }
 
         // group="a,b" or group="*"
+        // ③ 根据配置处理多分组结果聚合
         Map<String, String> qs = StringUtils.parseQueryString(url.getParameterAndDecoded(Constants.REFER_KEY));
         String group = qs.get(Constants.GROUP_KEY);
         if (group != null && group.length() > 0) {
@@ -287,6 +350,7 @@ public class RegistryProtocol implements Protocol {
                 return doRefer(getMergeableCluster(), registry, type, url);
             }
         }
+        // ④处理订阅数据并通过 cluster合并多个Invoker
         return doRefer(cluster, registry, type, url);
     }
 
@@ -294,7 +358,18 @@ public class RegistryProtocol implements Protocol {
         return ExtensionLoader.getExtensionLoader(Cluster.class).getExtension("mergeable");
     }
 
+    /**
+     * 处理订阅数据并通过 cluster合并多个Invoker
+     *
+     * @param cluster
+     * @param registry
+     * @param type
+     * @param url
+     * @param <T>
+     * @return
+     */
     private <T> Invoker<T> doRefer(Cluster cluster, Registry registry, Class<T> type, URL url) {
+        // ⑤ 消费核心关键，持有实际Invoker 和接收订阅通知
         RegistryDirectory<T> directory = new RegistryDirectory<T>(type, url);
         directory.setRegistry(registry);
         directory.setProtocol(protocol);
@@ -304,14 +379,17 @@ public class RegistryProtocol implements Protocol {
         if (!Constants.ANY_VALUE.equals(url.getServiceInterface())
                 && url.getParameter(Constants.REGISTER_KEY, true)) {
             URL registeredConsumerUrl = getRegisteredConsumerUrl(subscribeUrl, url);
+            // ⑥注册消费信息到注册中心
             registry.register(registeredConsumerUrl);
             directory.setRegisteredConsumerUrl(registeredConsumerUrl);
         }
+        // ⑦ 订阅服务提供者、路由和动态配置
         directory.subscribe(subscribeUrl.addParameter(Constants.CATEGORY_KEY,
                 Constants.PROVIDERS_CATEGORY
                         + "," + Constants.CONFIGURATORS_CATEGORY
                         + "," + Constants.ROUTERS_CATEGORY));
 
+        // ⑧ 通过 Cluster 合并 invokers
         Invoker invoker = cluster.join(directory);
         ProviderConsumerRegTable.registerConsumer(invoker, url, subscribeUrl, directory);
         return invoker;
@@ -495,11 +573,13 @@ public class RegistryProtocol implements Protocol {
         public void unexport() {
             Registry registry = RegistryProtocol.INSTANCE.getRegistry(originInvoker);
             try {
+                // ⑤Invoker销毁时注销端口和map中服务实例等资源
                 registry.unregister(registerUrl);
             } catch (Throwable t) {
                 logger.warn(t.getMessage(), t);
             }
             try {
+                // ⑥移除已注册的元数据
                 NotifyListener listener = RegistryProtocol.INSTANCE.overrideListeners.remove(subscribeUrl);
                 registry.unsubscribe(subscribeUrl, listener);
             } catch (Throwable t) {

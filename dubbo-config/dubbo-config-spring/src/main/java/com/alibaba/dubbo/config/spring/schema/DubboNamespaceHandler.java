@@ -32,7 +32,13 @@ import org.springframework.beans.factory.xml.NamespaceHandlerSupport;
 /**
  * DubboNamespaceHandler
  *
+ * Dubbo注册属性解析处理器
+ *
  * @export
+ *
+ * DubboNamespaceHandler主要把不同的标签关联解析实现类中，registerBeanDefinitionParser
+ * 方法约定了在Dubbo框架中遇到标签application> module和registry等都会委托给
+ * DubboBeanDefinitionParser处理。
  */
 public class DubboNamespaceHandler extends NamespaceHandlerSupport {
 

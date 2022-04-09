@@ -119,12 +119,30 @@ public abstract class AnnotationInjectedBeanPostProcessor<A extends Annotation> 
         this.beanFactory = (ConfigurableListableBeanFactory) beanFactory;
     }
 
+    /**
+     * 在①中主要利用这个扩展点查找服务引用的字段或方法。
+     * 在②中触发字段或反射方法值的注入，字段处理会调用findFieldReferenceMetadata方法，
+     *
+     * 在③(findFieldAnnotationMetadata) 中会遍历类所有字段，因为篇幅的原因，方法级别注入最终会调用
+     * findMethodReferenceMetadata方法处理上面的注解。在②中会触发字段或方法inject方法， 使用泛化调用的开发人员可能用过ReferenceConfig创建引用对象，这里做注入用的是
+     * ReferenceBean类，它同样继承自ReferenceConfig,在此基础上增加了 Spring初始化等生命
+     * 周期方法，比如触发afterPropertiesSet从容器中获取一些配置(protocol)等，当设置字段
+     * 值的时候仅调用referenceBean.getObject()获取远程代理即可
+     *
+     * @param pvs
+     * @param pds
+     * @param bean
+     * @param beanName
+     * @return
+     * @throws BeanCreationException
+     */
     @Override
     public PropertyValues postProcessPropertyValues(
             PropertyValues pvs, PropertyDescriptor[] pds, Object bean, String beanName) throws BeanCreationException {
-
+        // ① 查找Bean所有标注了仞Reference的字段和方法
         InjectionMetadata metadata = findInjectionMetadata(beanName, bean.getClass(), pvs);
         try {
+            // ②对字段、方法进行反射绑定
             metadata.inject(bean, beanName, pvs);
         } catch (BeanCreationException ex) {
             throw ex;
@@ -149,7 +167,7 @@ public abstract class AnnotationInjectedBeanPostProcessor<A extends Annotation> 
         ReflectionUtils.doWithFields(beanClass, new ReflectionUtils.FieldCallback() {
             @Override
             public void doWith(Field field) throws IllegalArgumentException, IllegalAccessException {
-
+                // ③
                 A annotation = getAnnotation(field, getAnnotationType());
 
                 if (annotation != null) {

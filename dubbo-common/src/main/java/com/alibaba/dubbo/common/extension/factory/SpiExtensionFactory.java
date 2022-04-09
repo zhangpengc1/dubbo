@@ -22,13 +22,19 @@ import com.alibaba.dubbo.common.extension.SPI;
 
 /**
  * SpiExtensionFactory
+ *
+ * 主要就是获取扩展点接口对应的Adaptive实现类。
+ * 例如：某个扩展点实现类 ClassA 上有@Adaptive 注解，则调用 SpiExtensionFactory#getExtension
+ * 会直接返回ClassA实例
  */
 public class SpiExtensionFactory implements ExtensionFactory {
 
     @Override
     public <T> T getExtension(Class<T> type, String name) {
+        // 根据类型获取所有的扩展点加载器
         if (type.isInterface() && type.isAnnotationPresent(SPI.class)) {
             ExtensionLoader<T> loader = ExtensionLoader.getExtensionLoader(type);
+            // 如果缓存的扩展点类不为空 接返回 Adaptive 实例
             if (!loader.getSupportedExtensions().isEmpty()) {
                 return loader.getAdaptiveExtension();
             }

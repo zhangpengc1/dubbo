@@ -41,10 +41,23 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 /**
+ * 消费注解注入
+ *
  * {@link org.springframework.beans.factory.config.BeanPostProcessor} implementation
  * that Consumer service {@link Reference} annotated fields
  *
  * @since 2.5.7
+ *
+ * 在实际使用过程中，我们会在旧Service注解的服务中注入旧Reference注解，这样就可以很
+ * 方便地发起远程服务调用，Dubbo中做属性注入是通过ReferenceAnnotationBeanPostProcessor处理的
+ *
+ * 主要做以下几种事情：
+ *  (1) 获取类中标注的^Reference注解的字段和方法
+ *  (2) 反射设置字段或方法对应的引用。
+ *
+ * 因为处理器 ReferenceAnnotationBeanPostProcessor 实现了 InstantiationAwareBeanPostProcessor
+ * 接口，所以在Spring的Bean中初始化前会触发postProcessPropertyValues方法,该方法允许我们做进一步处理，比如增加属性和属性值修改等
+ *
  */
 public class ReferenceAnnotationBeanPostProcessor extends AnnotationInjectedBeanPostProcessor<Reference>
         implements ApplicationContextAware, ApplicationListener {

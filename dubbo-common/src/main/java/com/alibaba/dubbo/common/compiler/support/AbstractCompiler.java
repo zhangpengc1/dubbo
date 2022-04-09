@@ -24,6 +24,11 @@ import java.util.regex.Pattern;
 
 /**
  * Abstract compiler. (SPI, Prototype, ThreadSafe)
+ *
+ *
+ * 它是一个抽象类，无法实例化，但在里面封装了通用的模板逻辑。
+ * 还定义了一个抽象方法decompile ,留给子类来实现具体的编译逻辑。
+ * JavassistCompiler和JDdkCompiler都实现了这个抽象方法。
  */
 public abstract class AbstractCompiler implements Compiler {
 
@@ -34,6 +39,7 @@ public abstract class AbstractCompiler implements Compiler {
     @Override
     public Class<?> compile(String code, ClassLoader classLoader) {
         code = code.trim();
+        // 通过正则匹配出包路径、类名，再根据包路径、类名拼接出全路径类名
         Matcher matcher = PACKAGE_PATTERN.matcher(code);
         String pkg;
         if (matcher.find()) {
@@ -48,6 +54,8 @@ public abstract class AbstractCompiler implements Compiler {
         } else {
             throw new IllegalArgumentException("No such class name in " + code);
         }
+
+        // 尝试通过Class.forName加载该类并返回，防止重复编译。如果类加载器中没有这个类
         String className = pkg != null && pkg.length() > 0 ? pkg + "." + cls : cls;
         try {
             return Class.forName(className, true, ClassHelper.getCallerClassLoader(getClass()));
@@ -56,6 +64,7 @@ public abstract class AbstractCompiler implements Compiler {
                 throw new IllegalStateException("The java code not endsWith \"}\", code: \n" + code + "\n");
             }
             try {
+                // 调用doCompile方法进行编译。这个抽象方法由子类实现
                 return doCompile(className, code);
             } catch (RuntimeException t) {
                 throw t;

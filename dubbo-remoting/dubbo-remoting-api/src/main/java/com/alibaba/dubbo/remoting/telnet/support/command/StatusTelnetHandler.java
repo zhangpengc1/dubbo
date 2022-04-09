@@ -34,6 +34,17 @@ import java.util.Map;
 
 /**
  * StatusTelnetHandler
+ *
+ * 当执行status命令时会触发StatusTelnetHandler#telnet调用，这个方法的实现也比较简单，
+ * 它会加载所有实现Statuschecker扩展点的类，然后调用所有扩展点的check方法。因为这类扩展点的具体实现并不复杂
+ *
+ * DataSourceStatusChecker 数据库状态检查
+ * LoadStatusChecker 系统平均负载检查
+ * MemoryStatusChecker JVM内存检查
+ * RegistryStatusChecker 注册中心状态检查
+ * ServerStatusChecker Dubbo服务暴露检查
+ * SpringStatusChecker Spring状态检查
+ * ThreadPoolStatusChecker Dubbo线程池检查
  */
 @Activate
 @Help(parameter = "[-l]", summary = "Show status.", detail = "Show status.")

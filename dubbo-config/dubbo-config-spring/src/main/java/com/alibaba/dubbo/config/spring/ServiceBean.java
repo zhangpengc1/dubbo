@@ -76,6 +76,7 @@ public class ServiceBean<T> extends ServiceConfig<T> implements InitializingBean
         this.service = service;
     }
 
+    // 会调用静态方法保存Spring上下文，即一个服务被发布或被引用的时候，对应的Spring 上下文会被保存下来。
     @Override
     public void setApplicationContext(ApplicationContext applicationContext) {
         this.applicationContext = applicationContext;

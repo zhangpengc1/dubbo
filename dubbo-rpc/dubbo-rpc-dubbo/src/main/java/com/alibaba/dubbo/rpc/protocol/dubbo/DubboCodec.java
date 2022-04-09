@@ -174,45 +174,91 @@ public class DubboCodec extends ExchangeCodec implements Codec2 {
         encodeResponseData(channel, out, data, DUBBO_VERSION);
     }
 
+    /**
+     * 编码请求对象体,主要职责是将Dubbo方法调用参数和值编码成字节流
+     *
+     * 在编码消息体的时候，
+     *  在①中主要先写入框架的版本，这里主要用于支持服务端版本隔离和服务端隐式参数透传给客户端的特性。
+     *  在②中向服务端写入调用的接口。在③中指定接口的版本，默认版本为0.0.0,Dubbo允许同一个接口有多个实现，可以指定版本或分组来区分。在④中指定远程调用的接口方法。
+     *  在⑤中将方法参数类型以Java类型方式传递给服务端。
+     *  在⑥中循环对参数值进行序列化。
+     *  在⑦中写入隐式参数HashMap,这里可能包含timeout和group等动态参数。
+     *
+     * @param channel
+     * @param out
+     * @param data
+     * @param version
+     * @throws IOException
+     */
     @Override
     protected void encodeRequestData(Channel channel, ObjectOutput out, Object data, String version) throws IOException {
         RpcInvocation inv = (RpcInvocation) data;
 
+        // ① 写入框架版本
         out.writeUTF(version);
+        // ② 写入调用接口
         out.writeUTF(inv.getAttachment(Constants.PATH_KEY));
+        // ③写入接口指定的版本，默认0.0.0
         out.writeUTF(inv.getAttachment(Constants.VERSION_KEY));
-
+        // ④写入方法名称
         out.writeUTF(inv.getMethodName());
+        // ⑤ 写入方法参数类型
         out.writeUTF(ReflectUtils.getDesc(inv.getParameterTypes()));
+        // ⑥依次写入方法参数值
         Object[] args = inv.getArguments();
         if (args != null)
             for (int i = 0; i < args.length; i++) {
                 out.writeObject(encodeInvocationArgument(channel, inv, i));
             }
+        // ⑦ 写入隐式参数
         out.writeObject(inv.getAttachments());
     }
 
+    /**
+     * 编码响应对象,主要职责是将Dubbo方法调用状态和返回值编码成字节流
+     *
+     * 在①中判断客户端的版本是否支持隐式参数从服务端传递到客户端。
+     * 在②和③中处理正常服务调用，并且返回值为null的场景，用一个字节标记。
+     * 在④中处理方法正常调用并且有返回值，先写一个字节标记并序列化结果。
+     * 在⑤中处理方法调用发生异常，写一个字节标记并序列化异常对象。
+     * 在⑥中处理客户端支持隐式参数回传，记录服务端Dubbo版本，并返回服务端隐式参数。
+     *
+     * 除了编码请求和响应对象，还有一种处理普通字符串的场景，这种场景正是为了支持Telnet
+     * 协议调用实现的，这里主要是简单读取字符串值处理，后面会继续分析
+     *
+     * @param channel
+     * @param out
+     * @param data
+     * @param version
+     * @throws IOException
+     */
     @Override
     protected void encodeResponseData(Channel channel, ObjectOutput out, Object data, String version) throws IOException {
+        // ①判断客户端请求的版本是否支持服务端参数返回|
         Result result = (Result) data;
         // currently, the version value in Response records the version of Request
         boolean attach = Version.isSupportResponseAttatchment(version);
         Throwable th = result.getException();
         if (th == null) {
+            // ②提取正常返回结果
             Object ret = result.getValue();
             if (ret == null) {
+                // ③ 在编码结果前，先写一个字节标志
                 out.writeByte(attach ? RESPONSE_NULL_VALUE_WITH_ATTACHMENTS : RESPONSE_NULL_VALUE);
             } else {
                 out.writeByte(attach ? RESPONSE_VALUE_WITH_ATTACHMENTS : RESPONSE_VALUE);
+                // ④ 分别写一个字节标记和调用结果
                 out.writeObject(ret);
             }
         } else {
+            // ⑤ 标记调用抛异常，并序列化异常
             out.writeByte(attach ? RESPONSE_WITH_EXCEPTION_WITH_ATTACHMENTS : RESPONSE_WITH_EXCEPTION);
             out.writeObject(th);
         }
 
         if (attach) {
             // returns current version of Response to consumer side.
+            // ⑥记录服务端 Dubbo 版本，并返回服务端隐式参数
             result.getAttachments().put(Constants.DUBBO_VERSION_KEY, Version.getProtocolVersion());
             out.writeObject(result.getAttachments());
         }

@@ -26,6 +26,9 @@ import com.alibaba.dubbo.remoting.exchange.Request;
 
 import java.util.Collection;
 
+/**
+ * 心跳实现
+ */
 final class HeartBeatTask implements Runnable {
 
     private static final Logger logger = LoggerFactory.getLogger(HeartBeatTask.class);
@@ -42,11 +45,22 @@ final class HeartBeatTask implements Runnable {
         this.heartbeatTimeout = heartbeatTimeout;
     }
 
+    /**
+     * ①：遍历所有的Channel,在服务端对应的是所有客户端连接，在客户端对应的是服务端连接。
+     * ②：主要忽略已经关闭的Socket连接。
+     * 3：判断当前TCP连接是否空闲，如果空闲就发送心跳报文。目前判断是否是空闲的，根据Channel是否有读或写来决定，比如1分钟内没有读
+     * 或写就发送心跳报文。
+     * ④：处理客户端超时重新建立TCP连接，目前的策略是检查是否在3分
+     * 钟内(用户可以设置)都没有成功接收或发送报文。如果在服务端监测则会通过
+     * ⑤主动关闭远程客户端连接。
+     */
     @Override
     public void run() {
         try {
             long now = System.currentTimeMillis();
+            // ①遍历所有 Channel
             for (Channel channel : channelProvider.getChannels()) {
+                // ②忽略关闭的 Channel
                 if (channel.isClosed()) {
                     continue;
                 }
@@ -55,6 +69,7 @@ final class HeartBeatTask implements Runnable {
                             HeaderExchangeHandler.KEY_READ_TIMESTAMP);
                     Long lastWrite = (Long) channel.getAttribute(
                             HeaderExchangeHandler.KEY_WRITE_TIMESTAMP);
+                    // ③TCP连接空闲超过心跳时间，发送事件报文
                     if ((lastRead != null && now - lastRead > heartbeat)
                             || (lastWrite != null && now - lastWrite > heartbeat)) {
                         Request req = new Request();
@@ -72,11 +87,13 @@ final class HeartBeatTask implements Runnable {
                                 + ", because heartbeat read idle time out: " + heartbeatTimeout + "ms");
                         if (channel instanceof Client) {
                             try {
+                                // ④客户端空闲超时触发重连（默认超时为3分钟）
                                 ((Client) channel).reconnect();
                             } catch (Exception e) {
                                 //do nothing
                             }
                         } else {
+                            // ⑤ 服务端关闭连接
                             channel.close();
                         }
                     }

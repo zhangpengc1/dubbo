@@ -18,40 +18,40 @@ package com.alibaba.dubbo.common.compiler.support;
 
 import com.alibaba.dubbo.common.utils.ClassHelper;
 
-import javax.tools.DiagnosticCollector;
-import javax.tools.FileObject;
-import javax.tools.ForwardingJavaFileManager;
-import javax.tools.JavaCompiler;
-import javax.tools.JavaFileManager;
-import javax.tools.JavaFileObject;
+import javax.tools.*;
 import javax.tools.JavaFileObject.Kind;
-import javax.tools.SimpleJavaFileObject;
-import javax.tools.StandardJavaFileManager;
-import javax.tools.StandardLocation;
-import javax.tools.ToolProvider;
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
+import java.io.*;
 import java.net.URI;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.Enumeration;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 /**
  * JdkCompiler. (SPI, Singleton, ThreadSafe)
+ * <p>
+ * JdkCompiler是Dubbo编译器的另一种实现，使用了 JDK自带的编译器，原生JDK编译器包位于 javax. tools下。
+ * 主要使用了三个东西：JavaFileObject 接口、ForwardingJavaFileManager 接口、JavaCompiler.CompilationTask 方法。
+ * <p>
+ * 整个动态编译过程可以简单地总结为：
+ * 首先初始化一个JavaFileObject对象，并把代码字符串作为参数传入构造方法，
+ * 然后调用JavaCompiler.CompilationTask方法编译出具体的类。JavaFileManager负责
+ * 管理类文件的输入/输出位置
+ * <p>
+ * <p>
+ * JavaFileObject接口。字符串代码会被包装成一个文件对象，并提供获取二进制流
+ * 的接口。Dubbo框架中的JavaFileObjectlmpl类可以看作该接口一种扩展实现，构造方法中需
+ * 要传入生成好的字符串代码，此文件对象的输入和输出都是ByteArray流。由于
+ * SimpleDavaFileObject> DavaFileObject之间的关系属于JDK中的知识，因此在本章不深入讲
+ * 解，有兴趣的读者可以自行查看JDK源码。
+ * <p>
+ * JavaFileManager接口。主要管理文件的读取和输出位置。JDK中没有可以直接使用
+ * 的实现类，唯一的实现类ForwardingDavaFileManager构造器又是protect类型。因此Dubbo中
+ * 定制化实现了一个DavaFileManagerlmpl类，并通过一个自定义类加载器ClassLoaderlmpl完
+ * 成资源的加载
+ * <p>
+ * JavaCompiler.CompilationTask 把 DavaFileObject 对象编译成具体的类
  */
 public class JdkCompiler extends AbstractCompiler {
 
@@ -100,11 +100,15 @@ public class JdkCompiler extends AbstractCompiler {
         int i = name.lastIndexOf('.');
         String packageName = i < 0 ? "" : name.substring(0, i);
         String className = i < 0 ? name : name.substring(i + 1);
+
         JavaFileObjectImpl javaFileObject = new JavaFileObjectImpl(className, sourceCode);
+
         javaFileManager.putFileForInput(StandardLocation.SOURCE_PATH, packageName,
                 className + ClassUtils.JAVA_EXTENSION, javaFileObject);
+
         Boolean result = compiler.getTask(null, javaFileManager, diagnosticCollector, options,
                 null, Arrays.asList(javaFileObject)).call();
+
         if (result == null || !result) {
             throw new IllegalStateException("Compilation failed. class: " + name + ", diagnostics: " + diagnosticCollector);
         }
