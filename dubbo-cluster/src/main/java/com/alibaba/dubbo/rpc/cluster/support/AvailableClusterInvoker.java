@@ -27,7 +27,8 @@ import java.util.List;
 
 /**
  * AvailableCluster
- *
+ * <p>
+ * Available是找到第一个可用的服务直接调用，并返回结果
  */
 public class AvailableClusterInvoker<T> extends AbstractClusterInvoker<T> {
 
@@ -35,6 +36,16 @@ public class AvailableClusterInvoker<T> extends AbstractClusterInvoker<T> {
         super(directory);
     }
 
+    /**
+     * 1.遍历从AbstractClusterlnvoker传入的Invoker列表，如果Invoker是可用的，则直接调用并返回。
+     * 2.如果遍历整个列表还没找到可用的Invoker,则抛出异常。
+     *
+     * @param invocation
+     * @param invokers
+     * @param loadbalance
+     * @return
+     * @throws RpcException
+     */
     @Override
     public Result doInvoke(Invocation invocation, List<Invoker<T>> invokers, LoadBalance loadbalance) throws RpcException {
         for (Invoker<T> invoker : invokers) {

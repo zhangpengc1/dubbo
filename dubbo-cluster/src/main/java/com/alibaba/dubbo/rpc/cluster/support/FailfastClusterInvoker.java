@@ -32,7 +32,8 @@ import java.util.List;
  * Usually used for non-idempotent write operations
  *
  * <a href="http://en.wikipedia.org/wiki/Fail-fast">Fail-fast</a>
- *
+ * <p>
+ * Failfast 策略
  */
 public class FailfastClusterInvoker<T> extends AbstractClusterInvoker<T> {
 
@@ -40,11 +41,24 @@ public class FailfastClusterInvoker<T> extends AbstractClusterInvoker<T> {
         super(directory);
     }
 
+
+    /**
+     * Failfast会在失败后直接抛出异常并返回，实现非常简单，步骤如下：
+     *
+     * @param invocation
+     * @param invokers
+     * @param loadbalance
+     * @return
+     * @throws RpcException
+     */
     @Override
     public Result doInvoke(Invocation invocation, List<Invoker<T>> invokers, LoadBalance loadbalance) throws RpcException {
+        // 1.校验。校验从AbstractClusterlnvoker传入的Invoker列表是否为空。
         checkInvokers(invokers, invocation);
+        // 2.负载均衡。调用select方法做负载均衡，得到要调用的节点。
         Invoker<T> invoker = select(loadbalance, invocation, invokers, null);
         try {
+            // 3.进行远程调用。在try代码块中调用invoker#invoke方法做远程调用。如果捕获到异常，则直接封装成RpcException抛出。
             return invoker.invoke(invocation);
         } catch (Throwable e) {
             if (e instanceof RpcException && ((RpcException) e).isBiz()) { // biz exception.
