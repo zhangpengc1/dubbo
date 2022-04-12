@@ -162,6 +162,42 @@ public abstract class AbstractClusterInvoker<T> implements Invoker<T> {
     }
 
     /**
+     * 很多容错策略中都会使用负载均衡方法，并且所有的容错策略中的负载均衡都使用了抽象父类Abstractclusterinvoker中定义的Invoker<T> select方法，
+     * 而并不是直接使用LoadBalance方法。因为抽象父类在LoadBalance的基础上又封装了一些新的特性：
+     *
+     * (1) 粘滞连接。Dubbo中有一种特性叫粘滞连接，以下内容摘自官方文档： 粘滞连接用于有状态服务，尽可能让客户端总是向同一提供者发起调用，除非该提供者“挂了”，再连接
+     * 另一台。粘滞连接将自动开启延迟连接，以减少长连接数。
+     * <dubbo:protocol name=Hdubbo" sticky="true" />
+     *
+     * (2) 可用检测。Dubbo调用的URL中，如果含有cluster.availablecheck=false,则不
+     * 会检测远程服务是否可用，直接调用。如果不设置，则默认会开启检查，对所有的服务都做是
+     * 否可用的检查，如果不可用，则再次做负载均衡。
+     *
+     * (3) 避免重复调用。对于已经调用过的远程服务，避免重复选择，每次都使用同一个节点。
+     * 这种特性主要是为了避免并发场景下，某个节点瞬间被大量请求。
+     *
+     * 整个逻辑过程大致可以分为4步：
+     *
+     * (1) 检查URL中是否有配置粘滞连接，如果有则使用粘滞连接的Invoker。如果没有配置
+     * 粘滞连接，或者重复调用检测不通过、可用检测不通过，则进入第2步。
+     *
+     * (2) 通过ExtensionLoader获取负载均衡的具体实现，并通过负载均衡做节点的选择。对
+     * 选择出来的节点做重复调用、可用性检测，通过则直接返回，否则进入第3步。
+     *
+     * (3) 进行节点的重新选择。如果需要做可用性检测，则会遍历Directory中得到的所有节
+     * 点，过滤不可用和已经调用过的节点，在剩余的节点中重新做负载均衡；如果不需要做可用性
+     * 检测，那么也会遍历Directory中得到的所有节点，但只过滤已经调用过的，在剩余的节点中重
+     * 新做负载均衡。这里存在一种情况，就是在过滤不可用或已经调用过的节点时，节点全部被过
+     * 滤，没有剩下任何节点，此时进入第4步。
+     *
+     * (4) 遍历所有已经调用过的节点，选出所有可用的节点，再通过负载均衡选出一个节点并
+     * 返回。如果还找不到可调用的节点，则返回null。
+     *
+     * 框架会优先处理粘滞连接。否则会根据可用性检测或重复
+     * 调用检测过滤一些节点，并在剩余的节点中做负载均衡。如果可用性检测或重复调用检测把节
+     * 点都过滤了，则兜底的策略是：在己经调用过的节点中通过负载均衡选择出一个可用的节点。
+     *
+     *
      * Select a invoker using loadbalance policy.</br>
      * a)Firstly, select an invoker using loadbalance. If this invoker is in previously selected list, or, 
      * if this invoker is unavailable, then continue step b (reselect), otherwise return the first selected invoker</br>
@@ -207,9 +243,11 @@ public abstract class AbstractClusterInvoker<T> implements Invoker<T> {
             return null;
         if (invokers.size() == 1)
             return invokers.get(0);
+
         if (loadbalance == null) {
             loadbalance = ExtensionLoader.getExtensionLoader(LoadBalance.class).getExtension(Constants.DEFAULT_LOADBALANCE);
         }
+
         Invoker<T> invoker = loadbalance.select(invokers, getUrl(), invocation);
 
         //If the `invoker` is in the  `selected` or invoker is unavailable && availablecheck is true, reselect.

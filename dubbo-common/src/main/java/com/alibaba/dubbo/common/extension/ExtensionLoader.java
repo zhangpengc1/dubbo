@@ -515,7 +515,7 @@ public class ExtensionLoader<T> {
      * <p>
      * 实现原理:
      *   为接口中每个有Adaptive注解的方法生成默认实现(没有注解的方法则生成空实现)，每个默认实现都会从URL中提取Adaptive参数值，并
-     * 以此为依据动态加载扩展点。然后，框架会使用不同的编译器，把实现类字符串编译为自适应类并返回。
+     * 以此为依据动态加载扩展点。然后，框架会使用不同的编译器，把实现类RouterFactor字符串编译为自适应类并返回。
      *
      *  (1) 生成package，import、类名称等头部信息。此处只会引入一个类ExtensionLoader。 为了不写其他类的import方法，其他方法调用时全部使用全路径。类名称会变为“接口名称+
      * SAdaptive ” 的格式。例如：Transporter 接口会生成 Transporter$Adpative。

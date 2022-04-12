@@ -48,6 +48,11 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * ScriptRouter
+ *
+ * 脚本路由使用JDK自带的脚本解析器解析脚本并运行，
+ * 默认使用JavaScript解析器，其逻辑分为构造方法和route方法两大部分。
+ * 构造方法主要负责一些初始化的工作，route方法则是具体的过滤逻辑执行的地方。
+ *
  */
 public class ScriptRouter extends AbstractRouter {
 
@@ -125,11 +130,13 @@ public class ScriptRouter extends AbstractRouter {
         if (engine == null || function == null) {
             return invokers;
         }
+        // 构造要传入脚本的参数
         final Bindings bindings = createBindings(invokers, invocation);
         return getRoutedInvokers(AccessController.doPrivileged(new PrivilegedAction() {
             @Override
             public Object run() {
                 try {
+                    // 执行脚本
                     return function.eval(bindings);
                 } catch (ScriptException e) {
                     logger.error("route error, rule has been ignored. rule: " + rule + ", method:" +

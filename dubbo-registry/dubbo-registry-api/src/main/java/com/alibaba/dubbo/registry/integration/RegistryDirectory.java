@@ -56,6 +56,20 @@ import java.util.Set;
 /**
  * RegistryDirectory
  *
+ * 属于Directory的动态列表实现，会自动从注册中心更新Invoker列表、配置信息、路由列表。
+ *
+ * RegistryDirectory中有两条比较重要的逻辑线，
+ * 第一条，框架与注册中心的订阅，并动态更新本地Invoker列表、路由列表、配置信息的逻辑；
+ * 第二条，子类实现父类的doList方法。
+ *
+ * 1.订阅与动态更新
+ * 这个逻辑主要涉及subscribe、notify,refreshinvoker
+ * 三个方法，其余是一些数据转换的辅助类方法，如toConfigurators> toRouterSo
+ *
+ * 2.doList的实现
+ * notify中更新的Invoker列表最终会转化为一个字典Map<Stringj List<Invoker<T>>>
+ * methodlnvokerMap key是对应的方法名称，value是整个Invoker列表。
+ *
  */
 public class RegistryDirectory<T> extends AbstractDirectory<T> implements NotifyListener {
 
@@ -156,6 +170,14 @@ public class RegistryDirectory<T> extends AbstractDirectory<T> implements Notify
         this.registry = registry;
     }
 
+    /**
+     * subscribe是订阅某个URL的更新信息。
+     *
+     * Dubbo在引用每个需要RPC调用的Bean的时候，会调用directory.subscribe来订阅这个Bean的各种URL的变化(Bean的配置在配置中心中
+     * 都是以URL的形式存放的)。这个方法比较简单，只有两行代码，仅仅使用registry.subscribe订阅。
+     *
+     * @param url
+     */
     public void subscribe(URL url) {
         setConsumerUrl(url);
         registry.subscribe(url, this);
@@ -192,6 +214,30 @@ public class RegistryDirectory<T> extends AbstractDirectory<T> implements Notify
         }
     }
 
+    /**
+     * notify就是监听到配置中心对应的URL的变化，然后更新本地的配置参数。监听的URL
+     * 分为三类：配置configurators 路由规则router, Invoker列表
+     *
+     * (1) 新建三个List,分别用于保存更新的Invoker URL、路由配置URL、配置URL。遍历
+     * 监听返回的所有URL,分类后放入三个List中。
+     *
+     * (2) 解析并更新配置参数。
+     * 对于router类参数，首先遍历所有router类型的URL,然后通过Router工厂把每个
+     * URL包装成路由规则，最后更新本地的路由信息。这个过程会忽略以empty开头的
+     * URLo
+     *
+     * 对于Configurator类的参数，管理员可以在dubbo-admin动态配置功能上修改生产者的
+     * 参数，这些参数会保存在配置中心的configurators类目下。notify监听到URL配置参
+     * 数的变化，会解析并更新本地的Configurator配置。
+     *
+     * 对于Invoker类型的参数，如果是empty协议的URL,则会禁用该服务，并销毁本地
+     * 缓存的Invoker；如果监听到的Invoker类型URL都是空的，则说明没有更新，直接使
+     * 用本地的老缓存；如果监听到的Invoker类型URL不为空，则把新的URL和本地老的
+     * URL合并，创建新的Invoker,找出差异的老Invoker并销毁
+     *
+     *
+     * @param urls The list of registered information , is always not empty. The meaning is the same as the return value of {@link com.alibaba.dubbo.registry.RegistryService#lookup(URL)}.
+     */
     @Override
     public synchronized void notify(List<URL> urls) {
         List<URL> invokerUrls = new ArrayList<URL>();
@@ -598,6 +644,26 @@ public class RegistryDirectory<T> extends AbstractDirectory<T> implements Notify
         }
     }
 
+    /**
+     * doList的最终目标就是在字典里匹配出可以调用的Invoker列表，并返回给上层。其主要步骤如下：
+     *
+     * (1)检查服务是否被禁用。如果配置中心禁用了某个服务，则该服务无法被调用。如果服
+     * 务被禁用则会抛出异常
+     *
+     * (2)根据方法名和首参数匹配Invokero这是一个比较奇特的特性。根据方法名和首参数
+     * 查找对应的Invoker列表，暂时没看到相关的应用场景。
+     *
+     * (3)根据方法名匹配Invokero以方法名为key去methodlnvokerMap中匹配Invoker列表,
+     * 如果还是没有匹配到
+     *
+     * (4)根据"*”匹配Invokero用星号去匹配Invoker列表，如果还没有匹配到，则进入最
+     * 后一步兜底操作。
+     *
+     * (5)遍历methodlnvokerMap,找到第一个Invoker列表返回。如果还没有，则返回一个空
+     * 列表。
+     * @param invocation
+     * @return
+     */
     @Override
     public List<Invoker<T>> doList(Invocation invocation) {
         if (forbidden) {

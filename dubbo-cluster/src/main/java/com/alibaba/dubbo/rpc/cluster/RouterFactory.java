@@ -21,6 +21,15 @@ import com.alibaba.dubbo.common.extension.Adaptive;
 import com.alibaba.dubbo.common.extension.SPI;
 
 /**
+ * RouterFactory是一个SPI接口，没有设置默认值，
+ * 但由于有@Adaptive("protocol")注解， 因此它会根据URL中的protocol参数确定要初始化哪一个具体的Router实现。
+ *
+ * 在SPI的配置文件中能看到，URL中的protocol可以设置file、script、condition三种
+ * 值，可以分别寻找对应的实现类
+ *
+ * RouterFactory的实现类也非常简单，就是直接“new” 一个对应的Router并返回。例如： ConditionRouterFactory 直接"new” 并返回一个 ConditionRouter。当然，FileRouterFactory
+ * 除外，直接在工厂类中实现了所有逻辑。
+ *
  * RouterFactory. (SPI, Singleton, ThreadSafe)
  * <p>
  * <a href="http://en.wikipedia.org/wiki/Routing">Routing</a>
