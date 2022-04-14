@@ -38,6 +38,41 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * Mockinvoker实现最终的Invoker逻辑。
+ *
+ * Mockinvoker与MockClusterlnvoker看起来都是Invoker,它们之间有什么区别呢？
+ *
+ * 首先，强制Mock、失败后返回Mock结果等逻辑是在MockClusterlnvoker里处理的；
+ * 其次，MockClusterlnvoker在某些逻辑下，会生成Mockinvoker并进行调用；
+ * 然后，在Mockinvoker里会处理 mock=,return null"> mock="throw xxx"或 mock=com.xxService 这些配置逻辑。
+ * 最后，Mockinvoker还会被 MockProtocol在引用远程服务的时候创建。我们可以认为， MockClusterlnvoker会处理一些Class级别的Mock逻辑，
+ * 例如：选择调用哪些Mock类。Mockinvoker处理的是方法级别的Mock逻辑，如返回值。
+ *
+ *
+ * 例如，我们在注册中心/dubbo/com.test.xxxService/providers这个服务提供者的目录下，
+ * 写入一个 Mock 的 URL： mock:// 192.168.0.123/com.test.xxxServiceo
+ *
+ * 在Mockinvoker的invoke方法中，主要处理逻辑如下：
+ *
+ * (1) 获取Mock参数值。通过URL获取Mock配置的参数，如果为空则抛出异常。优先
+ * 会获取方法级的Mock参数，例如：以methodName.mock为key去获取参数值；如果取不到， 则尝试以mock为key获取对应的参数值。
+ *
+ * (2) 处理参数值是return的配置。如果只配置了一个return,即mock=return,则返回一
+ * 个空的RpcResult；如果return后面还跟了别的参数，则首先解析返回类型，然后结合Mock参数和返回类型，返回Mock值。现支持以下类型的参数：Mock参数值等于empty,根据返回类
+ * 型返回new xxx()空对象；如果参数值是null> true> false,则直接返回这些值；如果是其他字符
+ * 串，则返回字符串；如果是数字、List、Map类型，则返回对应的JSON串；如果都没匹配上， 则直接返回Mock的参数值。
+ *
+ * (3) 处理参数值是throw的配置。如果throw后面没有字符串，则包装成一个RpcException
+ * 异常，直接抛出；如果throw后面有自定义的异常类，则使用自定义的异常类，并包装成一个
+ * RpcException 异常抛出。
+ *
+ * (4) 处理Mock实现类。先从缓存中取，如果有则直接返回。如果缓存中没有，则先获取接口的类型，如果Mock的参数配置的是true或default,则尝试通过“接口名+Mock”查找
+ * Mock实现类，例如：TestService会查找Mock实现TestServiceMock0如果是其他配置方式，则通过Mock的参数值进行查找，例如：配置了 mock=com.xxx.testservice ,则会查找
+ * com.xxx.testserviceo
+ *
+ * @param <T>
+ */
 final public class MockInvoker<T> implements Invoker<T> {
     private final static ProxyFactory proxyFactory = ExtensionLoader.getExtensionLoader(ProxyFactory.class).getAdaptiveExtension();
     private final static Map<String, Invoker<?>> mocks = new ConcurrentHashMap<String, Invoker<?>>();

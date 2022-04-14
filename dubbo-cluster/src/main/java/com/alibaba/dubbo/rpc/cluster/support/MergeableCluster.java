@@ -21,6 +21,11 @@ import com.alibaba.dubbo.rpc.RpcException;
 import com.alibaba.dubbo.rpc.cluster.Cluster;
 import com.alibaba.dubbo.rpc.cluster.Directory;
 
+/**
+ * MergerCluster也是Cluster接口的一种实现，因此也遵循Cluster的设计模式，在invoke方
+ * 法中完成具体逻辑。
+ *
+ */
 public class MergeableCluster implements Cluster {
 
     public static final String NAME = "mergeable";

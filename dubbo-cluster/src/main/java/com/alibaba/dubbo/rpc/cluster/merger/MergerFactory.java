@@ -25,6 +25,15 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
+/**
+ * 通过MergerFactory获得各种具体的Merger实现
+ *
+ * 如果开启了 Merger特性，并且未指定合并器(Merger的具体实现)，则框架会根据接口的
+ * 返回类型自动匹配合并器。我们可以扩展属于自己的合并器，MergerFactory在加载具体实现
+ * 的时候，会用ExtensionLoader把所有SPI的实现都加载到缓存中。后续使用时直接从缓存中
+ * 读取，如果读不到则会重新全量加载一次SPIo内置的合并我们可以分为四类：Array、Set、List、 Map,实现都比较简单。
+ *
+ */
 public class MergerFactory {
 
     private static final ConcurrentMap<Class<?>, Merger<?>> mergerCache =

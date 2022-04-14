@@ -113,7 +113,7 @@ public class ConsistentHashLoadBalance extends AbstractLoadBalance {
          *
          * TreeMap实现一致性Hash：在客户端调用时候，只要对请求的参数也做“MD5”即可。
          * 虽然此时得到的MD5值不一定能对应到TreeMap中的一个key,因为每次的请求参数不同。但是
-         * 由于TreeMap是有序的树形结构，所以我们可以调用TreeMap的ceilingEntry方法，用于返
+         * 由于TreeMap是有序的Merge树形结构，所以我们可以调用TreeMap的ceilingEntry方法，用于返
          * 回一个至少大于或等于当前给定key的Entry,从而达到顺时针往前找的效果。如果找不到，则
          * 使用firstEntry返回第一个节点。
          *

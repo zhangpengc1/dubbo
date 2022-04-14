@@ -23,7 +23,13 @@ import com.alibaba.dubbo.rpc.RpcException;
 import com.alibaba.dubbo.rpc.protocol.AbstractProtocol;
 
 /**
+ * MockProtocol也是协议的一种,主要是把注册中心的Mock URL转换为Mockinvoker对象。
+ * URL可以通过dubbo.admin或其他方式写入注册中心，它被定义为只能引用，不能暴露
+ *
+ *
  * MockProtocol is used for generating a mock invoker by URL and type on consumer side
+ *
+ * MockProtocol根据用户传入的URL和类型生成一个Mockinvoker
  */
 final public class MockProtocol extends AbstractProtocol {
 
@@ -34,11 +40,13 @@ final public class MockProtocol extends AbstractProtocol {
 
     @Override
     public <T> Exporter<T> export(Invoker<T> invoker) throws RpcException {
+        // 不能暴露，否则会抛异常
         throw new UnsupportedOperationException();
     }
 
     @Override
     public <T> Invoker<T> refer(Class<T> type, URL url) throws RpcException {
+        // 直接把引用的 Mock URL 转换为一个Mockinvoker 对象
         return new MockInvoker<T>(url);
     }
 }

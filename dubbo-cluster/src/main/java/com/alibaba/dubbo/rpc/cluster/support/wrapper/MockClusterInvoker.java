@@ -32,6 +32,15 @@ import com.alibaba.dubbo.rpc.support.MockInvoker;
 
 import java.util.List;
 
+/**
+ *
+ * MockClusterWrapper是一个包装类，它在创建 MockClusterlnvoker的时候会把被包装的
+ * Invoker传入构造方法，因此MockClusterlnvoker内部天生就含有一个Invoker的引用。
+ * MockClusterlnvoker的invoke方法处理了主要逻辑
+ *
+ *
+ * @param <T>
+ */
 public class MockClusterInvoker<T> implements Invoker<T> {
 
     private static final Logger logger = LoggerFactory.getLogger(MockClusterInvoker.class);
@@ -65,6 +74,22 @@ public class MockClusterInvoker<T> implements Invoker<T> {
         return directory.getInterface();
     }
 
+    /**
+     *(1) 获取Invoker的Mock参数。前面已经说过，该Invoker是在构造方法中传入的。如果
+     * 该Invoker根本就没有配置Mock,则直接调用Invoker的invoke方法并把结果返回；如果配置
+     * 了 Mock参数，则进入下一步。
+     *
+     * (2) 判断参数是否以force开头，即判断是否强制Mock。如果是强制Mock,则进入
+     * doMocklnvoke逻辑，这部分逻辑在后面统一讲解。如果不以force开头，则进入失败后Mock
+     * 的逻辑。
+     *
+     * (3) 失败后调用doMocklnvoke逻辑返回结果。在try代码块中直接调用Invoker的invoke
+     * 方法，如果抛出了异常，则在catch代码块中调用doMocklnvoke逻辑。
+     *
+     * @param invocation
+     * @return
+     * @throws RpcException
+     */
     @Override
     public Result invoke(Invocation invocation) throws RpcException {
         Result result = null;
@@ -97,6 +122,20 @@ public class MockClusterInvoker<T> implements Invoker<T> {
         return result;
     }
 
+    /**
+     * (1) 通过 selectMocklnvoker 获得所有 Mock 类型的 Invoker。selectMocklnvoker 在对象的
+     * attachment属性中偷偷放进一个invocation.need.mock=true的标识。directory在list方法中列出
+     * 所有Invoker的时候，如果检测到这个标识，则使用MockinvokersSelector来过滤Invoker,而不
+     * 是使用普通route实现，最后返回Mock类型的Invoker列表。如果一个Mock类型的Invoker
+     * 都没有返回，则通过directory的URL新创建一个Mockinvoker；如果有Mock类型的Invoker,
+     * 则使用第一个。
+     *
+     * (2) 调用Mockinvoker的invoke方法。在try-catch中调用invoke方法并返回结果。如果
+     * 出现了异常，并且是业务异常，则包装成一个RpcResult返回，否则返回RpcException异常。
+     * @param invocation
+     * @param e
+     * @return
+     */
     @SuppressWarnings({"unchecked", "rawtypes"})
     private Result doMockInvoke(Invocation invocation, RpcException e) {
         Result result = null;
